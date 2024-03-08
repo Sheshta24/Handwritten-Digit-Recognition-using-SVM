@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Mar  8 19:06:41 2024
+
+@author: sheshta
+"""
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Mar  5 20:52:07 2024
+
+@author: sheshta
+"""
+
+import numpy as np
+from sklearn.datasets import fetch_openml
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+
+# Load the MNIST dataset
+mnist = fetch_openml('mnist_784', version=1, parser='auto')
+
+# Extract data and labels
+X, y = mnist['data'], mnist['target']
+y = y.astype(np.int8)  # Convert target to integer
+
+# Split the data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Scale the data
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train.astype(np.float64))
+X_test_scaled = scaler.transform(X_test.astype(np.float64))
+
+# RBF Kernel Function
+def rbf_kernel(x1, x2, gamma=0.05):
+    return np.exp(-gamma * np.linalg.norm(x1 - x2, axis=1) ** 2)
+
+# Custom SVM Classifier with RBF Kernel
+class RbfSVM:
+    def __init__(self, C=1, gamma=0.05, max_iter=1000):
+        self.C = C
+        self.gamma = gamma
+        self.max_iter = max_iter
+        self.alpha = None
+        self.support_vectors = None
+        self.support_vector_labels = None
+
+    def fit(self, X, y):
+        n_samples, _ = X.shape
+        self.alpha = np.zeros(n_samples)
+
+        for _ in range(self.max_iter):
+            for i in range(n_samples):
+                kernel = rbf_kernel(X[i], X, self.gamma)
+                decision = np.dot(self.alpha * y, kernel)
+                if y[i] * decision < 1:
+                    self.alpha[i] += self.C * (1 - y[i] * decision)
+
+        self.support_vectors = X
+        self.support_vector_labels = y
+
+    def predict(self, X):
+        predictions = np.zeros(X.shape[0])
+        for i in range(X.shape[0]):
+            kernel = rbf_kernel(X[i], self.support_vectors, self.gamma)
+            decision = np.dot(self.alpha * self.support_vector_labels, kernel)
+            predictions[i] = np.sign(decision)
+        return predictions
+
+# One-vs-Rest Classifier
+class OvRClassifier:
+    def __init__(self, classifier, *args, **kwargs):
+        self.classifier = classifier
+        self.classifiers = []
+        self.args = args
+        self.kwargs = kwargs
+
+    def fit(self, X, y):
+        self.classes_ = np.unique(y)
+        for class_ in self.classes_:
+            y_binary = np.where(y == class_, 1, -1)
+            clf = self.classifier(*self.args, **self.kwargs)
+            clf.fit(X, y_binary)
+            self.classifiers.append(clf)
+
+    def predict(self, X):
+        predictions = np.array([clf.predict(X) for clf in self.classifiers]).T
+        return np.argmax(predictions, axis=1)
+
+# Train and test the custom SVM with RBF Kernel
+ovr_clf = OvRClassifier(RbfSVM)
+ovr_clf.fit(X_train_scaled, y_train)
+test_predictions = ovr_clf.predict(X_test_scaled)
+accuracy = accuracy_score(y_test, test_predictions)
+
+print("Accuracy on the testing subset:", accuracy)
